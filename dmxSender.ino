@@ -1,5 +1,7 @@
+#define DMX_USE_PORT1
 #include <DMXSerial.h>
 #include <Wire.h>
+#include <pins_arduino.h>
 
 const uint8_t numberOfArduinos = 32; //33*16 = 528
 const int dmxChannel = 1;
@@ -50,8 +52,8 @@ uint8_t i = 0;
 void setup() {
   Serial.begin(9600); //define baud rate
   Serial.println("Moin Moin"); //print a message
-  DMXSerial.init(DMXController);
-  DMXSerial.maxChannel(512); //32*16
+  DMXSerial.init(DMXController);// pin 2 is used for direction;
+  DMXSerial.maxChannel(DMXSERIAL_MAX); //32*16
 }
 
 void loop() {
@@ -64,9 +66,11 @@ void loop() {
       for (uint8_t j = 0; j< 16; j++) {
         uint8_t hoek = pattern[i][j];
         DMXSerial.write(channel, hoek); // 32x16=512 ...
+        Serial.print(hoek);Serial.print(",");
         channel++;
       }
     }
+    Serial.println();
   } while (millis() < timeout);
   //break 88us + 8us + 513*44us (4 us +.8x4.+4+4 us) is minimaal 22.668 ms
   i= (++i)%totalsteps;
