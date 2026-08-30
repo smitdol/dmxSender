@@ -5,7 +5,7 @@
 #include "pattern.h"
 
 const int msglen = 482; // timeout + sequencenr + 16*30 
-
+uint8_t test = 0;
 
 const uint8_t totalsteps = (sizeof(pattern) + sizeof(restpattern))/(481*sizeof(pattern[0]));
 
@@ -35,10 +35,24 @@ void loop() {
   Serial.print("timout ");Serial.print(to); Serial.println();
   int channel = 0; 
   DMXSerial.write(channel++, 0); //preamble
+  
   for (int j = 0; j < msglen; j++) { //start at 0; full msglen transmission
     uint8_t hoek = pgm_read_byte_near(data++); // read byte and increment data ptr
-    DMXSerial.write(channel++, hoek); 
-    Serial.print(hoek);
+    //DMXSerial.write(channel++, hoek); 
+
+// j == 2 is the 3rd byte aka channel 3, proven to correspond with module 0 motor 0
+// j == 18 proven to correspond with module 1 motor 0
+// j == 19 proven to correspond with module 1 motor 1
+// j == 33 proven to correspond with module 1 motor 15
+
+    if (j == 33) {
+      DMXSerial.write(channel++, test++);
+    Serial.print(test);
+    } else {
+      DMXSerial.write(channel++, 0);
+    Serial.print(0);
+    }
+    //DMXSerial.write(channel++, hoek); 
     Serial.print(",");
   }
   Serial.println();
