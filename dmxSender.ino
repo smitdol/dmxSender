@@ -10,7 +10,7 @@ uint8_t hoek = 0;
 uint8_t test = 0;
 char buffer[17];
 #define cols 48  // 2x 24 motors
-#define TEST 1
+#define TEST 0
 uint8_t msgbuffer[2*cols]; // 2 rows of 2x24 motors
 uint8_t bline[8]; // storage for motors 8-15
 const uint8_t totalsteps = (sizeof(pattern) + sizeof(restpattern))/(msglen*sizeof(pattern[0]));
@@ -30,6 +30,7 @@ void setup() {
   for(uint8_t i = 1; i < 11; i++){
 //    home(i);
   }
+  fullhouse();
 }
 
 void LogLine(const char * s) {
@@ -61,12 +62,26 @@ void CheckSerial() {
     }
   }
 }
-
+void fullhouse() {
+  int channel = 1;
+  DMXSerial.write(channel++, 0); // test
+  if (TEST == 1)
+  {
+    DMXSerial.write(channel++, 12); // timeout
+  }
+  DMXSerial.write(channel++, 0); // sequence number
+  for (int j = channel; j < msglen; j++) { //start at 0; full msglen transmission
+    DMXSerial.write(channel++, 240);
+  }
+  delay(12000);
+}
 void home(uint8_t row){
   snprintf(buffer, 16, "homing row %i",row);LogLine(buffer);
   uint8_t channel=1;
   DMXSerial.write(channel++, 0); // test
-  DMXSerial.write(channel++, 12); // timeout
+  if (TEST == 1 ){
+    DMXSerial.write(channel++, 12); // timeout
+  }
   DMXSerial.write(channel++, 0); // sequence number
   uint8_t emptyRows = (row-1)/2;
   for( uint8_t j = 0; j < emptyRows;j++) {
@@ -121,7 +136,9 @@ void loop() {
       to = pgm_read_byte_near(data++);
       timeout = 500*to ; // timeout is in .5 seconds
       DMXSerial.write(channel++, 0); // test = 0, no test
-      DMXSerial.write(channel++, to); // timeout
+      if (TEST == 1) {
+        DMXSerial.write(channel++, to); // timeout
+      }
       DMXSerial.write(channel++, pgm_read_byte_near(data++)); // sequencenr
       for (uint8_t doublerow = 0; doublerow < 5; doublerow++) {
         for (uint8_t row = 1; row <= 2; row++) {
