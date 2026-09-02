@@ -4,26 +4,47 @@
 #include <pins_arduino.h>
 #include "pattern.h"
 
-#define version "Version 0.94"
+#define version "Version 0.96"
 #define msglen 482 // test + sequencenr + 16*30 
 uint8_t hoek = 0;
 uint8_t test = 0;
 char buffer[17];
 #define cols 48  // 2x 24 motors
-#define TEST 0
+#define TESTVERSION 1
 uint8_t msgbuffer[2*cols]; // 2 rows of 2x24 motors
 uint8_t bline[8]; // storage for motors 8-15
 const uint8_t totalsteps = (sizeof(pattern) + sizeof(restpattern))/(msglen*sizeof(pattern[0]));
 unsigned long time;
 unsigned long now;
 unsigned long delta;
+int tmp = 0;
+bool stop = false;
+
+const byte ledPin1 = 8;
+const byte ledPin2 = 9;
+const byte startPin = 11;//not 2;  // input pin that the interruption will be attached to
+const byte stopPin = 12;//not 2;  // input pin that the interruption will be attached to
 
 uint8_t step = 0;
+unsigned long offset = 0;
+const uint8_t * data;
+
 void setup() {
   Serial.begin(9600); //define baud rate
   snprintf(buffer, 16, __DATE__);LogLine(buffer);
   snprintf(buffer, 16, __TIME__);LogLine(buffer);
   snprintf(buffer, 16, version );LogLine(buffer);
+  
+  pinMode(ledPin1, OUTPUT);
+  digitalWrite(ledPin1, HIGH);
+  pinMode(startPin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(startPin), restart, CHANGE);
+
+  pinMode(ledPin2, OUTPUT);
+  digitalWrite(ledPin2, HIGH);
+  pinMode(stopPin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(stopPin), stopNow, CHANGE);
+
 
   DMXSerial.init(DMXController);// pin 2 is used for direction;
   DMXSerial.maxChannel(DMXSERIAL_MAX); //32*16 = 512; msglen < DMXSERIAL_MAX
@@ -33,6 +54,13 @@ void setup() {
   fullhouse();
 }
 
+void restart() {
+  step = 0;
+  stop=false;
+}
+void stopNow() {
+  stop = true;
+}
 void LogLine(const char * s) {
   Serial.println(s);
 }
@@ -44,16 +72,7 @@ void CheckSerial() {
     int parsedInt;
     switch (receivedCommand) {
       case 't':
-        parsedInt = Serial.parseInt();
-        if (parsedInt < 0 || parsedInt > 14)
-        {
-          snprintf(buffer, 16, "invalid %i",parsedInt);
-          LogLine(buffer);
-        } else {
-          test = parsedInt;
-          snprintf(buffer, 16, "test %i",parsedInt);
-          LogLine(buffer);
-        }
+        test = Serial.parseInt();
         break;
       default:
         snprintf(buffer, 16, "received %c",receivedCommand);
@@ -62,84 +81,144 @@ void CheckSerial() {
     }
   }
 }
+
+void dmxWrite(int channel, uint8_t value) {
+  switch (channel) {
+    case 0:
+      DMXSerial.write(channel, 0);
+    break;
+    case 1: // timeout, but not for installed base
+      if (TESTVERSION == 0) {
+        DMXSerial.write(channel, 0);
+      } else {
+        DMXSerial.write(channel, value);
+      }
+      break;
+    case 2: // sequencenumber or timeout
+      DMXSerial.write(channel, value);
+      break;
+    case 3:
+      if (TESTVERSION == 0){
+        dmxWriteData(channel, value);
+      } else {
+        DMXSerial.write(channel, value);
+      }
+      break;
+    default: // data
+      dmxWriteData(channel, value);
+      break;
+  }
+}
+void dmxWriteData(int channel, uint8_t value)
+{
+  if (value > 8 && value < 240) {
+    DMXSerial.write(channel, 8);
+  } else {
+    DMXSerial.write(channel, value);
+  }
+}   
+
 void fullhouse() {
   int channel = 1;
-  DMXSerial.write(channel++, 0); // test
-  if (TEST == 1)
+  dmxWrite(channel++, 0); // test
+  if (TESTVERSION == 1)
   {
-    DMXSerial.write(channel++, 12); // timeout
+    dmxWrite(channel++, 12); // timeout
   }
-  DMXSerial.write(channel++, 0); // sequence number
+  dmxWrite(channel++, 0); // sequence number
   for (int j = channel; j < msglen; j++) { //start at 0; full msglen transmission
-    DMXSerial.write(channel++, 240);
+    dmxWrite(channel++, 240);
   }
   delay(12000);
 }
 void home(uint8_t row){
   snprintf(buffer, 16, "homing row %i",row);LogLine(buffer);
-  uint8_t channel=1;
-  DMXSerial.write(channel++, 0); // test
-  if (TEST == 1 ){
-    DMXSerial.write(channel++, 12); // timeout
+  int channel=1;
+  dmxWrite(channel++, 0); // test
+  if (TESTVERSION == 1 ){
+    dmxWrite(channel++, 12); // timeout
   }
-  DMXSerial.write(channel++, 0); // sequence number
+  dmxWrite(channel++, 0); // sequence number
   uint8_t emptyRows = (row-1)/2;
+  snprintf(buffer, 16, "empty rows %i",emptyRows);LogLine(buffer);
+
   for( uint8_t j = 0; j < emptyRows;j++) {
     for (uint8_t i = 0; i < cols; i++) {
-      DMXSerial.write(channel++, 0);
+      dmxWrite(channel++, 0);
     }
   }
+  snprintf(buffer, 16, "channel %i",channel);LogLine(buffer);
+
   for (uint8_t i = 0; i < 6; i++) { 
-    for (uint8_t j = 0; j < 4; j++)
+    for (uint8_t j = 0; j < 8; j++)
     {
       if (row%2 ==  0){
-        DMXSerial.write(channel++, 0);
-        DMXSerial.write(channel++, 240);
+        dmxWrite(channel++, 0);
+        Serial.print("0,");
       } else {
-        DMXSerial.write(channel++, 240);
-        DMXSerial.write(channel++, 0);
+        dmxWrite(channel++, 240);
+        Serial.print("240,");
       }
     }
     for (uint8_t j = 0; j < 8; j++)
     {
-      //b-line
-      DMXSerial.write(channel++, 0);
+      if (row%2 ==  0){
+        dmxWrite(channel++, 240);
+        Serial.print("240,");
+      } else {
+        dmxWrite(channel++, 0);
+        Serial.print("0,");
+      }
     }
-    for (uint8_t i = channel; i < msglen; i++) {
-      DMXSerial.write(channel++, 0);
+    Serial.println();
+  }
+  snprintf(buffer, 16, "channel %i",channel);LogLine(buffer);
+  if (channel < msglen) {
+    while( channel < msglen) {
+      dmxWrite(channel++, 0);
+      Serial.print(channel);Serial.print(", ");
+      if (channel % 32 == 0)
+        Serial.println();
     }
   }
+  snprintf(buffer, 16, "rest of rows done");LogLine(buffer);
 }
 
 void loop() {
   time = millis();
-
   CheckSerial();
+
   snprintf(buffer, 16, "Step: %i", step);LogLine(buffer);
-  unsigned long offset = msglen*step;
-  const uint8_t * data;
-  snprintf(buffer, 16, "calculate start");LogLine(buffer);
-  if (offset > sizeof(pattern)/sizeof(pattern[0])) {
-    data = restpattern;
-    offset -= sizeof(pattern)/sizeof(pattern[0]);
-  } else {
-    data = pattern;
-  }
-  data+=offset;
+  if (step%2 == 0)
+  digitalWrite(ledPin1, LOW);  // blink at 0
+  else
+  digitalWrite(ledPin1, HIGH);  // blink at 0
+  snprintf(buffer, 16, "stop: %i", stop);LogLine(buffer);
+  digitalWrite(ledPin2, stop);
+
   
   uint8_t to = 12; // 2x3 sec (x2 x .5 seconds)
-  unsigned long timeout = 6000; //ms, timeout is in .5 seconds
-  int channel = 1; 
+  unsigned long timeout = 1000; //ms, timeout is in .5 seconds
+  int channel = 1;
   switch (test)
   {
     default:
+    offset = msglen*step;
+    snprintf(buffer, 16, "calculate start");LogLine(buffer);
+    if (offset > sizeof(pattern)/sizeof(pattern[0])) {
+      data = restpattern;
+      offset -= sizeof(pattern)/sizeof(pattern[0]);
+    } else {
+      data = pattern;
+    }
+      data+=offset;
       to = pgm_read_byte_near(data++);
       timeout = 500*to ; // timeout is in .5 seconds
-      DMXSerial.write(channel++, 0); // test = 0, no test
-      if (TEST == 1) {
-        DMXSerial.write(channel++, to); // timeout
+      dmxWrite(channel++, 0); // test = 0, no test
+      if (TESTVERSION == 1) {
+        dmxWrite(channel++, to); // timeout
       }
-      DMXSerial.write(channel++, pgm_read_byte_near(data++)); // sequencenr
+      dmxWrite(channel++, pgm_read_byte_near(data++)); // sequencenr
       for (uint8_t doublerow = 0; doublerow < 5; doublerow++) {
         for (uint8_t row = 1; row <= 2; row++) {
           for (int j = 0; j < cols; j++) { 
@@ -147,11 +226,10 @@ void loop() {
             msgbuffer[row*cols -1 - j] = pgm_read_byte_near(data++); // read byte and increment data ptr
           }
         }
-        uint8_t tmp;
         for (uint8_t i = 0; i <= 6; i++) { // 0..6 modules
           uint8_t astart=i*8; // start of the module first motor of the even row
           for (uint8_t j = astart; j <= astart+8; j++) {
-            DMXSerial.write(channel++, msgbuffer[j]);  // 8 bytes in normaal order 
+            dmxWrite(channel++, msgbuffer[j]);  // 8 bytes in normaal order 
           }
           uint8_t bstart=astart+48; // start of the module first motor of the odd row
           uint8_t l = 0;
@@ -166,11 +244,14 @@ void loop() {
             }
           }
           for(uint8_t j = 0; j< 8; j++){
-            DMXSerial.write(channel++, bline[j]);  // 8 bytes in swapped reversed order
+            dmxWrite(channel++, bline[j]);  // 8 bytes in swapped reversed order
           }
         }
       }
-      step = (++step)%totalsteps;
+      tmp=0;
+      if (!stop){
+        step = (++step)%totalsteps;
+      }
       break;
     case 1:
       home(1);
@@ -203,26 +284,64 @@ void loop() {
       home(10);
       break;
     case 11:
-      DMXSerial.write(TEST, 1); // test 1
+      DMXSerial.write(TESTVERSION, 1); // test 1
       break;
     case 12:
-        DMXSerial.write(TEST, 2); // test 2
+        DMXSerial.write(TESTVERSION, 2); // test 2
       break;
     case 13:
-        DMXSerial.write(TEST, 3); // test 2
+        DMXSerial.write(TESTVERSION, 3); // test 3
       break;
     case 14:
-      for (int j = channel; j < msglen; j++) { //start at 0; full msglen transmission
-        if (j == 33) {
-          snprintf(buffer, 16, "%i", hoek);LogLine(buffer);
-          DMXSerial.write(channel++, hoek++);
-          hoek=hoek%16;
-        } else {
-          snprintf(buffer, 16, "%i", 0);LogLine(buffer);
-          DMXSerial.write(channel++, 0);
-        }
-        Serial.print(",");
+      snprintf(buffer, 16, "case 14 %i", tmp);LogLine(buffer);
+
+      for (int j = 2; j < tmp; j++) { //start at 0; full msglen transmission
+        dmxWrite(channel++, 1);
       }
+      for (int j = tmp; j < msglen; j++) {
+        dmxWrite(channel++, 0);
+      }
+      dmxWrite(TESTVERSION, 0); 
+      tmp++;
+      if (tmp > msglen) {
+        test=0;
+        tmp = 0;
+      }
+      break;
+    case 15:
+      snprintf(buffer, 16, "case 15 %i", tmp);LogLine(buffer);
+      if (tmp == 0) {
+        memset(DMXSerial.getBuffer(),0,DMXSERIAL_MAX + 1);
+      }
+      if (tmp > msglen) {
+        test=0;
+        tmp = 0;
+      }
+      dmxWrite(channel++, 0); // test = 0, no test
+      if (TESTVERSION == 1) {
+        dmxWrite(channel++, 6); // timeout
+      }
+      dmxWrite(channel++, tmp); // sequencenr
+      dmxWrite(tmp++, 8); 
+      break;
+    case 16:
+      if (tmp == 0) {
+        memset(DMXSerial.getBuffer(),0,DMXSERIAL_MAX + 1);
+      }
+      if (tmp > msglen) {
+        test=0;
+        tmp = 0;
+      }
+      dmxWrite(channel++, 0); // test = 0, no test
+      if (TESTVERSION == 1) {
+        dmxWrite(channel++, 6); // timeout
+      }
+      dmxWrite(channel++, tmp); // sequencenr
+      dmxWrite(tmp++, 8); 
+      if (tmp%8 == 0) {
+        tmp +=8;
+      }
+
       break;
   }
   snprintf(buffer, 16, "Timeout: %i", timeout);LogLine(buffer);
