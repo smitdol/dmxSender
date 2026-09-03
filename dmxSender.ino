@@ -19,7 +19,7 @@ unsigned long time;
 unsigned long now;
 unsigned long delta;
 int tmp = 0;
-bool stop = false;
+bool _stop;
 uint8_t to;
 long timeout;
 
@@ -46,12 +46,12 @@ void setup() {
   pinMode(ledPin1, OUTPUT);
   digitalWrite(ledPin1, HIGH);
   pinMode(startPin, INPUT_PULLUP);
-  //  attachInterrupt(digitalPinToInterrupt(startPin), restart, CHANGE);
+  //attachInterrupt(digitalPinToInterrupt(startPin), restart, CHANGE);
 
   pinMode(ledPin2, OUTPUT);
   digitalWrite(ledPin2, HIGH);
   pinMode(stopPin, INPUT_PULLUP);
-  //  attachInterrupt(digitalPinToInterrupt(stopPin), stopNow, CHANGE);
+  //attachInterrupt(digitalPinToInterrupt(stopPin), stopNow, CHANGE);
 
   snprintf(buffer, 16, __DATE__); LogLine(buffer);
   snprintf(buffer, 16, __TIME__); LogLine(buffer);
@@ -62,12 +62,12 @@ void setup() {
 void restart() {
   cli();
   step = 0;
-  stop = false;
+  _stop = false;
   sei();
 }
 void stopNow() {
   cli();
-  stop = true;
+  _stop = true;
   sei();
 }
 */
@@ -203,23 +203,23 @@ void loop() {
   CheckSerial();
   if (digitalRead(startPin) == LOW) {
     step = 0;
-    stop = false;
+    _stop = false;
   }
   if (digitalRead(stopPin) == LOW) {
     step = totalsteps - 1;
-    stop = true;
+    _stop = true;
   }
   snprintf(buffer, 16, "Step: %i", step);
   LogLine(buffer);
-  if (step % 2 == 0) {
+  if (step % 2 == 1) {
     digitalWrite(ledPin1, LOW);  // blink at 0
   } else {
     digitalWrite(ledPin1, HIGH);  // blink at 0
   }
-  if (stop){
-    digitalWrite(ledPin2, HIGH);
-  } else {
+  if (_stop){
     digitalWrite(ledPin2, LOW);
+  } else {
+    digitalWrite(ledPin2, HIGH);
   } 
   channel = 1;
   switch (test) {
@@ -271,7 +271,7 @@ void loop() {
         }
       }
       tmp = 0;
-      if (!stop) {
+      if (!_stop) {
         step = (++step) % totalsteps;
       }
       break;
