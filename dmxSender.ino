@@ -56,6 +56,7 @@ void setup() {
   snprintf(buffer, 16, __DATE__); LogLine(buffer);
   snprintf(buffer, 16, __TIME__); LogLine(buffer);
   snprintf(buffer, 16, version); LogLine(buffer);
+  snprintf(buffer, 16, "totalsteps: %1",totalsteps); LogLine(buffer);
 }
 
 /*
@@ -161,7 +162,7 @@ void home(uint8_t row) {
       dmxWrite(channel++, 0);
     }
   }
-  //snprintf(buffer, 16, "channel %i",channel);LogLine(buffer);
+  snprintf(buffer, 16, "channel %i",channel);LogLine(buffer);
 
   for (uint8_t i = 0; i < 6; i++) {
     for (uint8_t j = 0; j < 8; j++) {
@@ -209,7 +210,7 @@ void loop() {
     step = totalsteps - 1;
     _stop = true;
   }
-  snprintf(buffer, 16, "Step: %i", step);
+  snprintf(buffer, 16, "Step: %i", step+1);
   LogLine(buffer);
   if (step % 2 == 1) {
     digitalWrite(ledPin1, LOW);  // blink at 0
@@ -366,6 +367,9 @@ void loop() {
         tmp += 8;
       }
       break;
+      case 99:
+        fullhouse();
+        break;
   }
   snprintf(buffer, 16, "Timeout: %i", timeout);
   LogLine(buffer);
