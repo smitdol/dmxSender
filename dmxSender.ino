@@ -4,7 +4,7 @@
 #include <pins_arduino.h>
 #include "pattern.h"
 
-#define version "Version 0.98"
+#define version "Version 0.99"
 #define TESTVERSION 0
 unsigned long msglen = 482 + TESTVERSION;  // _test + sequencenr + 16*30
 uint8_t hoek = 0;
@@ -157,7 +157,7 @@ void fullhouse() {
     dmxWrite(channel++, 12);  // timeout
   }
   dmxWrite(channel++, 0);                   // sequence number
-  for (int j = channel; j < msglen; j++) {  //start at 0; full msglen transmission
+  for (int j = channel; j <= msglen; j++) {  //start at 0; full msglen transmission
     dmxWrite(channel++, 240);
   }
   delay(1000);
