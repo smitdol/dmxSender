@@ -4,11 +4,11 @@
 #include <pins_arduino.h>
 #include "pattern.h"
 
-#define version "Version 0.97"
+#define version "Version 0.98"
 #define TESTVERSION 0
-unsigned long msglen = 482 + TESTVERSION;  // test + sequencenr + 16*30
+unsigned long msglen = 482 + TESTVERSION;  // _test + sequencenr + 16*30
 uint8_t hoek = 0;
-uint8_t test = 0;
+volatile uint8_t _test = 99;
 char buffer[17];
 #define cols 48  // 2x 24 motors
 
@@ -19,16 +19,18 @@ unsigned long time;
 unsigned long now;
 unsigned long delta;
 int tmp = 0;
-bool _stop;
+volatile bool _stop = false;
 uint8_t to;
 long timeout;
 
 const byte ledPin1 = 6;
 const byte ledPin2 = 7;
-const byte startPin = 9;  //not 2;  // input pin that the interruption will be attached to
-const byte stopPin = 10;  //not 2;  // input pin that the interruption will be attached to
+const byte ledPin3 = 8;
+const byte startPin = 21;  //interrupt pin, not 2; only 2,3 18 19 and 20/21 if lcd not used
+const byte stopPin = 19;  //2 in use for dmx, 18 for tx
+const byte homePin = 20;
 
-uint8_t step;
+volatile uint8_t step;
 unsigned long offset;
 const uint8_t* data;
 int channel;
@@ -46,20 +48,29 @@ void setup() {
   pinMode(ledPin1, OUTPUT);
   digitalWrite(ledPin1, HIGH);
   pinMode(startPin, INPUT_PULLUP);
-  //attachInterrupt(digitalPinToInterrupt(startPin), restart, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(startPin), restart, CHANGE);
 
   pinMode(ledPin2, OUTPUT);
   digitalWrite(ledPin2, HIGH);
   pinMode(stopPin, INPUT_PULLUP);
-  //attachInterrupt(digitalPinToInterrupt(stopPin), stopNow, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(stopPin), stopNow, CHANGE);
+
+  pinMode(ledPin3, OUTPUT);
+  digitalWrite(ledPin3, HIGH);
+  pinMode(homePin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(homePin), homeNow, CHANGE);
+
 
   snprintf(buffer, 16, __DATE__); LogLine(buffer);
   snprintf(buffer, 16, __TIME__); LogLine(buffer);
   snprintf(buffer, 16, version); LogLine(buffer);
-  snprintf(buffer, 16, "totalsteps: %1",totalsteps); LogLine(buffer);
+  snprintf(buffer, 16, "totalsteps: %i",totalsteps); LogLine(buffer);
+
+  _stop =false;
+  _test = 0;
+
 }
 
-/*
 void restart() {
   cli();
   step = 0;
@@ -71,7 +82,14 @@ void stopNow() {
   _stop = true;
   sei();
 }
-*/
+void homeNow() {
+  cli();
+  if (_test == 0)
+    _test = 99;
+  else 
+    _test = 0;
+  sei();
+}
 void LogLine(const char* s) {
   Serial.println(s);
 }
@@ -83,7 +101,7 @@ void CheckSerial() {
     int parsedInt;
     switch (receivedCommand) {
       case 't':
-        test = Serial.parseInt();
+        _test = Serial.parseInt();
         break;
       default:
         snprintf(buffer, 16, "received %c", receivedCommand);
@@ -134,7 +152,7 @@ void dmxWriteData(int channel, uint8_t value) {
 
 void fullhouse() {
   channel = 1;
-  dmxWrite(channel++, 0);  // test
+  dmxWrite(channel++, 0);  // _test
   if (TESTVERSION == 1) {
     dmxWrite(channel++, 12);  // timeout
   }
@@ -142,13 +160,13 @@ void fullhouse() {
   for (int j = channel; j < msglen; j++) {  //start at 0; full msglen transmission
     dmxWrite(channel++, 240);
   }
-  delay(12000);
+  delay(1000);
 }
 void home(uint8_t row) {
   snprintf(buffer, 16, "homing row %i", row);
   LogLine(buffer);
   channel = 1;
-  dmxWrite(channel++, 0);  // test
+  dmxWrite(channel++, 0);  // _test
   if (TESTVERSION == 1) {
     dmxWrite(channel++, 12);  // timeout
   }
@@ -202,6 +220,7 @@ void home(uint8_t row) {
 void loop() {
   time = millis();
   CheckSerial();
+  /*
   if (digitalRead(startPin) == LOW) {
     step = 0;
     _stop = false;
@@ -210,6 +229,7 @@ void loop() {
     step = totalsteps - 1;
     _stop = true;
   }
+  */
   snprintf(buffer, 16, "Step: %i", step+1);
   LogLine(buffer);
   if (step % 2 == 1) {
@@ -218,12 +238,25 @@ void loop() {
     digitalWrite(ledPin1, HIGH);  // blink at 0
   }
   if (_stop){
-    digitalWrite(ledPin2, LOW);
+    digitalWrite(ledPin2, HIGH);//_stop;
+    digitalWrite(ledPin1, LOW); //stop
+    step = totalsteps-1;
+    snprintf(buffer, 16, "stopped"); LogLine(buffer);
   } else {
-    digitalWrite(ledPin2, HIGH);
-  } 
+    digitalWrite(ledPin2, LOW);
+    snprintf(buffer, 16, "not stopped"); LogLine(buffer);
+  }
+
+  if (_test == 0) {
+    digitalWrite(ledPin3, LOW);
+    snprintf(buffer, 16, "running pattern"); LogLine(buffer);
+  } else {
+    digitalWrite(ledPin3, HIGH);
+    snprintf(buffer, 16, "test %i", _test); LogLine(buffer);
+  }
+
   channel = 1;
-  switch (test) {
+  switch (_test) {
     default:
       offset = msglen * step;
       snprintf(buffer, 16, "0ffset %i",offset);LogLine(buffer);
@@ -236,7 +269,7 @@ void loop() {
       data += offset;
       to = pgm_read_byte_near(data++);
       timeout = 500L * to;      // timeout is in .5 seconds
-      dmxWrite(channel++, 0);  // test = 0, no test
+      dmxWrite(channel++, 0);  // _test = 0, no _test
       if (TESTVERSION == 1) {
         dmxWrite(channel++, to);  // timeout
       }
@@ -307,13 +340,13 @@ void loop() {
       home(10);
       break;
     case 11:
-      DMXSerial.write(TESTVERSION, 1);  // test 1
+      DMXSerial.write(TESTVERSION, 1);  // _test 1
       break;
     case 12:
-      DMXSerial.write(TESTVERSION, 2);  // test 2
+      DMXSerial.write(TESTVERSION, 2);  // _test 2
       break;
     case 13:
-      DMXSerial.write(TESTVERSION, 3);  // test 3
+      DMXSerial.write(TESTVERSION, 3);  // _test 3
       break;
     case 14:
       snprintf(buffer, 16, "case 14 %i", tmp);
@@ -328,7 +361,7 @@ void loop() {
       dmxWrite(TESTVERSION, 0);
       tmp++;
       if (tmp > msglen) {
-        test = 0;
+        _test = 0;
         tmp = 0;
       }
       break;
@@ -339,10 +372,10 @@ void loop() {
         memset(DMXSerial.getBuffer(), 0, DMXSERIAL_MAX + 1);
       }
       if (tmp > msglen) {
-        test = 0;
+        _test = 0;
         tmp = 0;
       }
-      dmxWrite(channel++, 0);  // test = 0, no test
+      dmxWrite(channel++, 0);  // _test = 0, no _test
       if (TESTVERSION == 1) {
         dmxWrite(channel++, 6);  // timeout
       }
@@ -354,10 +387,10 @@ void loop() {
         memset(DMXSerial.getBuffer(), 0, DMXSERIAL_MAX + 1);
       }
       if (tmp > msglen) {
-        test = 0;
+        _test = 0;
         tmp = 0;
       }
-      dmxWrite(channel++, 0);  // test = 0, no test
+      dmxWrite(channel++, 0);  // _test = 0, no _test
       if (TESTVERSION == 1) {
         dmxWrite(channel++, 6);  // timeout
       }
