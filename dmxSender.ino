@@ -75,6 +75,7 @@ void restart() {
   cli();
   step = 0;
   _stop = false;
+  _test = 0;
   sei();
 }
 void stopNow() {
