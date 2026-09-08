@@ -4,14 +4,14 @@
 #include <pins_arduino.h>
 #include "pattern.h"
 
-#define version "Version 0.99"
+#define version "Version 1.00"
 #define TESTVERSION 0
 unsigned long msglen = 482 + TESTVERSION;  // _test + sequencenr + 16*30
 uint8_t hoek = 0;
 volatile uint8_t _test = 99;
 char buffer[17];
 #define cols 48  // 2x 24 motors
-
+unsigned long _duration;
 uint8_t msgbuffer[2 * cols];  // 2 rows of 2x24 motors
 uint8_t bline[8];             // storage for motors 8-15
 const uint8_t totalsteps = (sizeof(pattern) + sizeof(restpattern)) / (msglen * sizeof(pattern[0]));
@@ -30,7 +30,7 @@ const byte startPin = 21;  //interrupt pin, not 2; only 2,3 18 19 and 20/21 if l
 const byte stopPin = 19;  //2 in use for dmx, 18 for tx
 const byte homePin = 20;
 
-volatile uint8_t step;
+volatile uint8_t _step;
 unsigned long offset;
 const uint8_t* data;
 int channel;
@@ -68,14 +68,15 @@ void setup() {
 
   _stop =false;
   _test = 0;
-
+  _duration = 0;
 }
 
 void restart() {
   cli();
-  step = 0;
+  _step = 0;
   _stop = false;
   _test = 0;
+  _duration = 0;
   sei();
 }
 void stopNow() {
@@ -223,17 +224,17 @@ void loop() {
   CheckSerial();
   /*
   if (digitalRead(startPin) == LOW) {
-    step = 0;
+    _step = 0;
     _stop = false;
   }
   if (digitalRead(stopPin) == LOW) {
-    step = totalsteps - 1;
+    _step = totalsteps - 1;
     _stop = true;
   }
   */
-  snprintf(buffer, 16, "Step: %i", step+1);
+  snprintf(buffer, 16, "Step: %i", _step+1);
   LogLine(buffer);
-  if (step % 2 == 1) {
+  if (_step % 2 == 1) {
     digitalWrite(ledPin1, LOW);  // blink at 0
   } else {
     digitalWrite(ledPin1, HIGH);  // blink at 0
@@ -241,7 +242,7 @@ void loop() {
   if (_stop){
     digitalWrite(ledPin2, HIGH);//_stop;
     digitalWrite(ledPin1, LOW); //stop
-    step = totalsteps-1;
+    _step = totalsteps-1;
     snprintf(buffer, 16, "stopped"); LogLine(buffer);
   } else {
     digitalWrite(ledPin2, LOW);
@@ -259,8 +260,8 @@ void loop() {
   channel = 1;
   switch (_test) {
     default:
-      offset = msglen * step;
-      snprintf(buffer, 16, "0ffset %i",offset);LogLine(buffer);
+      offset = msglen * _step;
+      //snprintf(buffer, 16, "0ffset %i",offset);LogLine(buffer);
       if (offset > sizeof(pattern) / sizeof(pattern[0])) {
         data = restpattern;
         offset -= sizeof(pattern) / sizeof(pattern[0]);
@@ -307,7 +308,7 @@ void loop() {
       }
       tmp = 0;
       if (!_stop) {
-        step = (++step) % totalsteps;
+        _step = (++_step) % totalsteps;
       }
       break;
     case 1:
@@ -408,10 +409,15 @@ void loop() {
   snprintf(buffer, 16, "Timeout: %i", timeout);
   LogLine(buffer);
   //break 88us + 8us + 513*44us (4 us +.8x4.+4+4 us) is minimaal 22.668 ms
+  _duration = _duration + timeout;
+  snprintf(buffer, 16, "duration: %ld", _duration);
+  LogLine(buffer);
+  if (_step == 0) _duration = 0;
   now = millis();
   delta = now - time;
   if (timeout > delta) {
     timeout = timeout - delta;
     delay(timeout);
   }
+
 }
